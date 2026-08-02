@@ -1,193 +1,88 @@
-#include <iostream>
-#include <vector>
-#include <string>
-#include <sstream>
+#include "AlertLogger.h"
+#include "NetworkMonitor.h"
+#include "ThreatIntelClient.h"
+
 #include <chrono>
-#include <thread>
-#include <map>
 #include <fstream>
-#include <ctime>
-#include  <iomanip>
+#include <iostream>
+#include <map>
 #include <set>
+#include <string>
+#include <thread>
 
-using std::cout;
-using std::cerr;
-using std::vector;
-using std::string;
-using std::map;
-using std::ios;
-using std::ofstream;
-using std::ifstream;
-using std::set;
+std::set<std::string> loadTrustedEndpoints(
+    const std::string& path) {
+    std::ifstream trustedFile(path);
+    std::set<std::string> endpoints;
+    std::string endpoint;
 
-string normalizeEndpoint(const string& endpoint) {
-    const string prefix = "[::ffff:";
-
-    if (endpoint.rfind(prefix, 0) != 0) {
-        return endpoint;
-    }
-
-    const size_t closingBracket = endpoint.find("]:");
-
-    if (closingBracket == string::npos) {
-        return endpoint;
-    }
-
-    return endpoint.substr(prefix.size(),
-                           closingBracket - prefix.size())
-           + endpoint.substr(closingBracket + 1);
-}
-
-bool isLoopbackEndpoint(const string& endpoint) {
-    return endpoint.rfind("127.", 0) == 0 ||
-            endpoint.rfind("::1", 0) == 0 ||
-            endpoint.rfind("::ffff:127", 0) == 0;
-}
-map<string,string> getRemoteEndpoints() {
-    const char* command = "ss -H -tunpO state established";
-    FILE* pipe = popen(command, "r");
-
-    if (pipe == nullptr) {
-        cerr << "Could not run ss.\n ";
-        return {};
-    }
-    map<string,string> endpoints;
-    char buffer[512];
-
-    while (fgets(buffer,sizeof(buffer),pipe) != nullptr) {
-        std::istringstream line(buffer);
-
-        string protocol;
-        string receiveQueue;
-        string sendQueue;
-        string localAddress;
-        string remoteAddress;
-
-    if (line >> protocol >> receiveQueue >> sendQueue
-             >> localAddress >> remoteAddress) {            
-            string processInfo;
-            std::getline(line,processInfo);
-            remoteAddress = normalizeEndpoint(remoteAddress);
-            const size_t firstCharacter = processInfo.find_first_not_of(" \t\r\n");
-
-            if (firstCharacter == string::npos) {
-                processInfo = "unavailable (permission restricted or kernel socket)";
-            } else {
-                processInfo.erase(0, firstCharacter);
-            }
-
-            if (!isLoopbackEndpoint(remoteAddress)) {
-                endpoints[remoteAddress] = processInfo;
-            }
+    while (std::getline(trustedFile, endpoint)) {
+        if (!endpoint.empty() && endpoint[0] != '#') {
+            endpoints.insert(endpoint);
         }
     }
-    pclose(pipe);
+
     return endpoints;
-};
-string currentTimeStamp() {
-    const std::time_t now = std::time(nullptr);
-    const std::tm* localTime = std::localtime(&now);
-
-    if (localTime == nullptr) {
-        return "unknown-time-stamp";
-    }
-    std::ostringstream timestamp;
-    timestamp << std::put_time(localTime, "%Y-%m-%d %H:%M:%S");
-    return timestamp.str();
-}
-string formatProcessInfo(const string& processInfo) {
-    const size_t nameStart = processInfo.find('"');
-
-    if (nameStart == string::npos) {
-        return processInfo;
-    }
-
-    const size_t nameEnd = processInfo.find('"', nameStart + 1);
-    const size_t pidStart = processInfo.find("pid=");
-
-    if (nameEnd == string::npos || pidStart == string::npos) {
-        return processInfo;
-    }
-
-    const size_t pidEnd = processInfo.find(',', pidStart);
-
-    if (pidEnd == string::npos) {
-        return processInfo;
-    }
-
-    const string processName =
-        processInfo.substr(nameStart + 1, nameEnd - nameStart - 1);
-
-    const string processId =
-        processInfo.substr(pidStart + 4, pidEnd - pidStart - 4);
-
-    return processName + " (PID " + processId + ")";
 }
 
+int main() {
+    NetworkMonitor monitor;
+    AlertLogger logger("alerts.log");
+    ThreatIntelClient threadIntel;
 
-
-void saveAlert(const string& timestamp, const string& endpoint, const string& processInfo) {
-    ofstream alertLog("alerts.log",ios::app);
-    if (!alertLog) {
-        cerr << "Could not open alert log file.\n ";
-        return;
+    if (threadIntel.isConfigured()) {
+        std::cout << "AbuseIPDB key detected.\n";
     }
-    alertLog << "[ALERT]["<<timestamp<<"] New remote endpoint: " << endpoint << "\n";
-    alertLog << "              Process: " << processInfo << "\n";
-}
-
-set<string> loadTrustedEndpoints() {
-    ifstream trustedFile("trusted_endpoints.txt");
-    set<string> trustedEndpoints;
-    string endpoint;
-    while (std::getline(trustedFile,endpoint)) {
-        if (!endpoint.empty() && endpoint[0]!='#') {
-            trustedEndpoints.insert(endpoint);
-        }
+    else {
+        std::cout << "AbuseIPDB key not configured.\n";
     }
-    return trustedEndpoints;
-}
-int main(){
-    cout << "SentinelLite started.\n";
 
-    const set<string> trustedEndpoints = loadTrustedEndpoints();
-    cout<< "Trusted endpoint(s): [" << trustedEndpoints.size() << "].\n";
+    const std::set<std::string> trustedEndpoints =
+        loadTrustedEndpoints("trusted_endpoints.txt");
 
-    map<string,string>  knownEndpoints = getRemoteEndpoints();
+    std::map<std::string, std::string> knownEndpoints =
+        monitor.getConnections();
 
-    cout << "Monitoring started.\n";
-    cout<< "Known endpoint(s): [" << knownEndpoints.size() << "].\n";
-    cout << "Checking every 5 seconds...\n Stop with Ctrl+C\n";
+    std::cout
+        << "Linux Network Monitoring started (SentinelLIte).\n";
+
+    std::cout << "Trusted endpoints: ["
+              << trustedEndpoints.size() <<"]"<< '\n';
+
+    std::cout << "Known endpoints: ["
+              << knownEndpoints.size() <<"]"<< '\n';
+
+    std::cout
+        << "Checking every 5 seconds. Stop with Ctrl+C.\n";
 
     while (true) {
-        std::this_thread::sleep_for(std::chrono::seconds(5));
-        const map<string,string> current = getRemoteEndpoints();
+        std::this_thread::sleep_for(
+            std::chrono::seconds(5));
 
-     for (const auto& [endpoint, processInfo] : current) {
-            if (knownEndpoints.find(endpoint) != knownEndpoints.end()) {
+        const std::map<std::string, std::string>
+            currentConnections =
+                monitor.getConnections();
+
+        for (const auto& [endpoint, processInfo]
+             : currentConnections) {
+            if (knownEndpoints.find(endpoint)
+                != knownEndpoints.end()) {
                 continue;
-            }
-        
-            if (trustedEndpoints.find(endpoint) != trustedEndpoints.end()) {
-                cout << "[INFO] Trusted endpoint seen: "
-                     << endpoint << '\n';
-            } else {
-                const string timestamp = currentTimeStamp();
-                const string processSummary =  formatProcessInfo(processInfo);
+                }
 
-                cout << "[ALERT][" << timestamp
-                     << "] New remote endpoint: " << endpoint << '\n';
-        
-                cout << "              Process: "
-                     << processSummary << '\n';
-        
-                saveAlert(timestamp, endpoint, processSummary);
-            }
-        
+            if (trustedEndpoints.find(endpoint)
+                != trustedEndpoints.end()) {
+                logger.trustedEndpoint(endpoint);
+                } else {
+                    logger.alert(
+                        endpoint,
+                        processInfo,
+                        "MEDIUM");
+                }
+
             knownEndpoints[endpoint] = processInfo;
-        }
-
-
+             }
     }
-    return 0;
 }
+
+
