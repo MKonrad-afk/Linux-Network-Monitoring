@@ -2,6 +2,7 @@
 #include "NetworkMonitor.h"
 #include "ThreatIntelClient.h"
 #include "AuthLogMonitor.h"
+#include "AlertSummarizer.h"
 
 #include <chrono>
 #include <fstream>
@@ -10,6 +11,7 @@
 #include <set>
 #include <string>
 #include <thread>
+#include <cstdlib>
 
 std::set<std::string> loadTrustedEndpoints(
     const std::string& path) {
@@ -31,6 +33,41 @@ int main(int argc, char* argv[]) {
     AuthLogMonitor authMonitor("/var/log/auth.log");
 
     const bool demoBruteForce =  argc > 1  && std::string(argv[1]) == "--demo-bruteforce";
+    const bool demoAi= argc > 1 && std::string(argv[1]) == "--demo-ai";
+
+    if (demoAi) {
+        const char* ollamaEndpoint =
+            std::getenv("OLLAMA_ENDPOINT");
+
+        if (ollamaEndpoint == nullptr) {
+            std::cerr
+                << "OLLAMA_ENDPOINT is not configured.\n";
+            return 1;
+        }
+
+        AlertSummarizer summarizer(
+            ollamaEndpoint,
+            "qwen2.5:1.5b");
+
+        std::cout << "Requesting local AI security summary...\n";
+
+        const std::string summary =
+            summarizer.summarizeSshBruteForce(
+                "203.0.113.10",
+                "demo-user",
+                5);
+
+        if (summary.empty()) {
+            std::cerr << "AI summary unavailable.\n";
+            return 1;
+        }
+
+        std::cout << "\n[AI SUMMARY]\n"
+                  << summary
+                  << '\n';
+
+        return 0;
+    }
 
     if (authMonitor.isReady()) {
         std::cout << "Authentication log monitoring enabled.\n";
