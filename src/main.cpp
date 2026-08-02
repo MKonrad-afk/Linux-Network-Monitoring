@@ -58,20 +58,24 @@ map<string,string> getRemoteEndpoints() {
         std::istringstream line(buffer);
 
         string protocol;
-        string state;
         string receiveQueue;
         string sendQueue;
         string localAddress;
         string remoteAddress;
 
-    if (line >> protocol >> state >> receiveQueue >> sendQueue
+    if (line >> protocol >> receiveQueue >> sendQueue
              >> localAddress >> remoteAddress) {            
             string processInfo;
             std::getline(line,processInfo);
             remoteAddress = normalizeEndpoint(remoteAddress);
-            if (processInfo.empty()) {
-                processInfo = "unavailable (permission restricted or kernel socket";
+            const size_t firstCharacter = processInfo.find_first_not_of(" \t\r\n");
+
+            if (firstCharacter == string::npos) {
+                processInfo = "unavailable (permission restricted or kernel socket)";
+            } else {
+                processInfo.erase(0, firstCharacter);
             }
+
             if (!isLoopbackEndpoint(remoteAddress)) {
                 endpoints[remoteAddress] = processInfo;
             }
@@ -91,6 +95,36 @@ string currentTimeStamp() {
     timestamp << std::put_time(localTime, "%Y-%m-%d %H:%M:%S");
     return timestamp.str();
 }
+string formatProcessInfo(const string& processInfo) {
+    const size_t nameStart = processInfo.find('"');
+
+    if (nameStart == string::npos) {
+        return processInfo;
+    }
+
+    const size_t nameEnd = processInfo.find('"', nameStart + 1);
+    const size_t pidStart = processInfo.find("pid=");
+
+    if (nameEnd == string::npos || pidStart == string::npos) {
+        return processInfo;
+    }
+
+    const size_t pidEnd = processInfo.find(',', pidStart);
+
+    if (pidEnd == string::npos) {
+        return processInfo;
+    }
+
+    const string processName =
+        processInfo.substr(nameStart + 1, nameEnd - nameStart - 1);
+
+    const string processId =
+        processInfo.substr(pidStart + 4, pidEnd - pidStart - 4);
+
+    return processName + " (PID " + processId + ")";
+}
+
+
 
 void saveAlert(const string& timestamp, const string& endpoint, const string& processInfo) {
     ofstream alertLog("alerts.log",ios::app);
@@ -139,14 +173,15 @@ int main(){
                      << endpoint << '\n';
             } else {
                 const string timestamp = currentTimeStamp();
-        
+                const string processSummary =  formatProcessInfo(processInfo);
+
                 cout << "[ALERT][" << timestamp
                      << "] New remote endpoint: " << endpoint << '\n';
         
                 cout << "              Process: "
-                     << processInfo << '\n';
+                     << processSummary << '\n';
         
-                saveAlert(timestamp, endpoint, processInfo);
+                saveAlert(timestamp, endpoint, processSummary);
             }
         
             knownEndpoints[endpoint] = processInfo;
