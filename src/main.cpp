@@ -32,6 +32,8 @@ int main() {
 
     if (threadIntel.isConfigured()) {
         std::cout << "AbuseIPDB key detected.\n";
+        const int testScore = threadIntel.getAbuseConfidenceScore("8.8.8.8");
+        std::cout << "AbuseIPBD test score 8.8.8.8: " << testScore << '\n';
     }
     else {
         std::cout << "AbuseIPDB key not configured.\n";
