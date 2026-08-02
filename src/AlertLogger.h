@@ -14,7 +14,8 @@ public:
     void authAlert(const std::string& sourceIp,
         const std::string& user,
         std::size_t failedAttempts,
-        const std::string& severity)const;
+        const std::string& severity,
+        const std::string& aiSummary="")const;
 
     void trustedEndpoint(
         const std::string& endpoint) const;

@@ -1,20 +1,22 @@
 #include "AlertLogger.h"
+#include "AlertSummarizer.h"
+#include "AuthLogMonitor.h"
 #include "NetworkMonitor.h"
 #include "ThreatIntelClient.h"
-#include "AuthLogMonitor.h"
-#include "AlertSummarizer.h"
 
 #include <chrono>
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
 #include <thread>
-#include <cstdlib>
 
 std::set<std::string> loadTrustedEndpoints(
     const std::string& path) {
+
     std::ifstream trustedFile(path);
     std::set<std::string> endpoints;
     std::string endpoint;
@@ -29,11 +31,13 @@ std::set<std::string> loadTrustedEndpoints(
 }
 
 int main(int argc, char* argv[]) {
-    NetworkMonitor monitor;
-    AuthLogMonitor authMonitor("/var/log/auth.log");
+    const bool demoBruteForce =
+        argc > 1 &&
+        std::string(argv[1]) == "--demo-bruteforce";
 
-    const bool demoBruteForce =  argc > 1  && std::string(argv[1]) == "--demo-bruteforce";
-    const bool demoAi= argc > 1 && std::string(argv[1]) == "--demo-ai";
+    const bool demoAi =
+        argc > 1 &&
+        std::string(argv[1]) == "--demo-ai";
 
     if (demoAi) {
         const char* ollamaEndpoint =
@@ -69,20 +73,36 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
+    NetworkMonitor monitor;
+    AuthLogMonitor authMonitor("/var/log/auth.log");
+    AlertLogger logger("alerts.jsonl");
+    ThreatIntelClient threatIntel;
+
+    std::unique_ptr<AlertSummarizer> alertSummarizer;
+
+    const char* ollamaEndpoint =
+        std::getenv("OLLAMA_ENDPOINT");
+
+    if (ollamaEndpoint != nullptr) {
+        alertSummarizer =
+            std::make_unique<AlertSummarizer>(
+                ollamaEndpoint,
+                "qwen2.5:1.5b");
+
+        std::cout << "AI alert summaries enabled.\n";
+    } else {
+        std::cout << "AI alert summaries disabled.\n";
+    }
+
     if (authMonitor.isReady()) {
         std::cout << "Authentication log monitoring enabled.\n";
     } else {
         std::cout << "Authentication log monitoring unavailable.\n";
     }
 
-    AlertLogger logger("alerts.jsonl");
-    ThreatIntelClient threatIntel;
-
     if (threatIntel.isConfigured()) {
         std::cout << "AbuseIPDB key detected.\n";
-
-    }
-    else {
+    } else {
         std::cout << "AbuseIPDB key not configured.\n";
     }
 
@@ -92,21 +112,22 @@ int main(int argc, char* argv[]) {
     std::map<std::string, std::string> knownEndpoints =
         monitor.getConnections();
 
-    std::cout
-        << "Linux Network Monitoring started (SentinelLIte).\n";
+    std::cout << "Linux Network Monitoring started.\n";
 
     std::cout << "Trusted endpoints: ["
-              << trustedEndpoints.size() <<"]"<< '\n';
+              << trustedEndpoints.size()
+              << "]\n";
 
     std::cout << "Known endpoints: ["
-              << knownEndpoints.size() <<"]"<< '\n';
+              << knownEndpoints.size()
+              << "]\n";
 
     std::cout
         << "Checking every 5 seconds. Stop with Ctrl+C.\n";
 
-
     if (demoBruteForce) {
-        std::cout << "Running safe SSH brute-force detection demo.\n";
+        std::cout
+            << "Running safe SSH brute-force detection demo.\n";
 
         const AuthEvent demoEvent{
             AuthEventType::FailedSshLogin,
@@ -119,24 +140,38 @@ int main(int argc, char* argv[]) {
              i < AuthLogMonitor::bruteForceThreshold;
              ++i) {
 
-                const std::size_t attempts =
-                    authMonitor.recordFailedLogin(demoEvent);
+            const std::size_t attempts =
+                authMonitor.recordFailedLogin(demoEvent);
 
-                std::cout << "[AUTH][MEDIUM] Failed SSH login for "
-                          << demoEvent.user
-                          << " from "
-                          << demoEvent.sourceIp
-                          << " (" << attempts
-                          << " recent attempt(s))\n";
+            std::cout << "[AUTH][MEDIUM] Failed SSH login for "
+                      << demoEvent.user
+                      << " from "
+                      << demoEvent.sourceIp
+                      << " (" << attempts
+                      << " recent attempt(s))\n";
 
-                if (attempts == AuthLogMonitor::bruteForceThreshold) {
-                    logger.authAlert(
-                        demoEvent.sourceIp,
-                        demoEvent.user,
-                        attempts,
-                        "HIGH");
+            if (attempts ==
+                AuthLogMonitor::bruteForceThreshold) {
+
+                std::string aiSummary;
+
+                if (alertSummarizer != nullptr) {
+                    aiSummary =
+                        alertSummarizer
+                            ->summarizeSshBruteForce(
+                                demoEvent.sourceIp,
+                                demoEvent.user,
+                                attempts);
                 }
-             }
+
+                logger.authAlert(
+                    demoEvent.sourceIp,
+                    demoEvent.user,
+                    attempts,
+                    "HIGH",
+                    aiSummary);
+            }
+        }
 
         return 0;
     }
@@ -149,7 +184,9 @@ int main(int argc, char* argv[]) {
             currentConnections =
                 monitor.getConnections();
 
-        for (const AuthEvent& event : authMonitor.readNewEvents()) {
+        for (const AuthEvent& event :
+             authMonitor.readNewEvents()) {
+
             switch (event.type) {
                 case AuthEventType::SudoCommand:
                     std::cout << "[AUTH][INFO] Sudo command by "
@@ -158,61 +195,90 @@ int main(int argc, char* argv[]) {
                               << event.details
                               << '\n';
                     break;
+
                 case AuthEventType::FailedSshLogin: {
                     const std::size_t attempts =
                         authMonitor.recordFailedLogin(event);
 
-                    std::cout << "[AUTH][MEDIUM] Failed SSH login for "
-                              << event.user
-                              << " from "
-                              << event.sourceIp
-                              << " (" << attempts << " recent attempt(s))"
-                              << '\n';
+                    std::cout
+                        << "[AUTH][MEDIUM] Failed SSH login for "
+                        << event.user
+                        << " from "
+                        << event.sourceIp
+                        << " (" << attempts
+                        << " recent attempt(s))\n";
 
-                    if (attempts == AuthLogMonitor::bruteForceThreshold) {
-                        logger.authAlert(event.sourceIp, event.user,attempts,"HIGH");
+                    if (attempts ==
+                        AuthLogMonitor::bruteForceThreshold) {
+
+                        std::string aiSummary;
+
+                        if (alertSummarizer != nullptr) {
+                            aiSummary =
+                                alertSummarizer
+                                    ->summarizeSshBruteForce(
+                                        event.sourceIp,
+                                        event.user,
+                                        attempts);
+                        }
+
+                        logger.authAlert(
+                            event.sourceIp,
+                            event.user,
+                            attempts,
+                            "HIGH",
+                            aiSummary);
                     }
 
                     break;
                 }
+
                 case AuthEventType::SuccessfulSshLogin:
-                    std::cout << "[AUTH][INFO] Successful SSH login for "
-                              << event.user
-                              << " from "
-                              << event.sourceIp
-                              << '\n';
+                    std::cout
+                        << "[AUTH][INFO] Successful SSH login for "
+                        << event.user
+                        << " from "
+                        << event.sourceIp
+                        << '\n';
                     break;
             }
         }
-        for (const auto& [endpoint, processInfo]
-             : currentConnections) {
-            if (knownEndpoints.find(endpoint)
-                != knownEndpoints.end()) {
-                continue;
-                }
 
-            if (trustedEndpoints.find(endpoint)
-                != trustedEndpoints.end()) {
+        for (const auto& [endpoint, processInfo] :
+             currentConnections) {
+
+            if (knownEndpoints.find(endpoint) !=
+                knownEndpoints.end()) {
+                continue;
+            }
+
+            if (trustedEndpoints.find(endpoint) !=
+                trustedEndpoints.end()) {
+
                 logger.trustedEndpoint(endpoint);
-                } else {
-                    const std::size_t portSeparator =
+            } else {
+                const std::size_t portSeparator =
                     endpoint.rfind(':');
 
-                    const std::string ipAddress =endpoint.substr(0, portSeparator);
+                const std::string ipAddress =
+                    endpoint.substr(0, portSeparator);
 
-                    const int abuseScore =threatIntel.getAbuseConfidenceScore(ipAddress);
+                const int abuseScore =
+                    threatIntel.getAbuseConfidenceScore(
+                        ipAddress);
 
-                    const std::string severity =
-                        abuseScore >= 50 ? "HIGH" : "MEDIUM";
+                const std::string severity =
+                    abuseScore >= 50 ? "HIGH" : "MEDIUM";
 
-                    logger.alert(
-                        endpoint,
-                        processInfo,
-                        severity,
-                        abuseScore);
-                }
+                logger.alert(
+                    endpoint,
+                    processInfo,
+                    severity,
+                    abuseScore);
+            }
+
             knownEndpoints[endpoint] = processInfo;
-             }
+        }
     }
 }
 

@@ -121,7 +121,8 @@ void AlertLogger::authAlert(
     const std::string& sourceIp,
     const std::string& user,
     std::size_t failedAttempts,
-    const std::string& severity) const {
+    const std::string& severity,
+    const std::string& aiSummary) const {
 
     const std::string timestamp = currentTimestamp();
 
@@ -134,7 +135,11 @@ void AlertLogger::authAlert(
     std::cout << "              Failed attempts: "
               << failedAttempts
               << " within 5 minutes.\n";
-
+    if (!aiSummary.empty()) {
+        std::cout << "              AI summary: "
+                  << aiSummary
+                  << '\n';
+    }
     std::ofstream alertLog(logPath_, std::ios::app);
 
     if (!alertLog) {
@@ -151,6 +156,9 @@ void AlertLogger::authAlert(
         {"failed_attempts", failedAttempts},
         {"window_seconds", 300}
     };
+    if (!aiSummary.empty()) {
+        alert["ai_summary"] = aiSummary;
+    }
 
     alertLog << alert.dump() << '\n';
 }
