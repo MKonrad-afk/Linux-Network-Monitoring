@@ -8,6 +8,7 @@
 #include <fstream>
 #include <ctime>
 #include  <iomanip>
+#include <set>
 
 using std::cout;
 using std::cerr;
@@ -16,6 +17,8 @@ using std::string;
 using std::map;
 using std::ios;
 using std::ofstream;
+using std::ifstream;
+using std::set;
 
 string normalizeEndpoint(const string& endpoint) {
     const string prefix = "[::ffff:";
@@ -94,8 +97,24 @@ void saveAlert(const string& timestamp, const string& endpoint, const string& pr
     alertLog << "[ALERT]["<<timestamp<<"] New remote endpoint: " << endpoint << "\n";
     alertLog << "              Process: " << processInfo << "\n";
 }
+
+set<string> loadTrustedEndpoints() {
+    ifstream trustedFile("trusted_endpoints.txt");
+    set<string> trustedEndpoints;
+    string endpoint;
+    while (std::getline(trustedFile,endpoint)) {
+        if (!endpoint.empty() && endpoint[0]!='#') {
+            trustedEndpoints.insert(endpoint);
+        }
+    }
+    return trustedEndpoints;
+}
 int main(){
     cout << "SentinelLite started.\n";
+
+    const set<string> trustedEndpoints = loadTrustedEndpoints();
+    cout<< "Trusted endpoint(s): [" << trustedEndpoints.size() << "].\n";
+
     map<string,string>  knownEndpoints = getRemoteEndpoints();
 
     cout << "Monitoring started.\n";
@@ -107,13 +126,17 @@ int main(){
         const map<string,string> current = getRemoteEndpoints();
 
         for (const auto& [endpoint,processInfo]: current) {
-            if (knownEndpoints.find(endpoint)== knownEndpoints.end()) {
+            if (trustedEndpoints.find(endpoint)== trustedEndpoints.end()) {
+                cout << "[INFO] Trusted endpoint seen: " << endpoint << "\n";
+            }
+            else{
                 const string timestamp = currentTimeStamp();
                 cout << "[ALERT]["<<timestamp<<"] New remote endpoint: " << endpoint << "\n";
                 cout << "              Process: " << processInfo << "\n";
                 saveAlert(timestamp , endpoint, processInfo);
-                knownEndpoints[endpoint] = processInfo;
+
             }
+            knownEndpoints[endpoint] = processInfo;
         }
 
 

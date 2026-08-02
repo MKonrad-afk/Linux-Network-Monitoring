@@ -1,6 +1,6 @@
 .idea/
 cmake-build-*/
-
+trusted_endpoints.txt
 
 alerts.log
 main
