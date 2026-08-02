@@ -3,4 +3,5 @@ cmake-build-*/
 trusted_endpoints.txt
 
 alerts.log
+alerts.jsonl
 main

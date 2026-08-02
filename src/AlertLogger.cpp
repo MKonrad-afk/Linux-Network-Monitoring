@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+#include <nlohmann/json.hpp>
 
 AlertLogger::AlertLogger(std::string logPath)
     : logPath_(std::move(logPath)) {
@@ -99,22 +100,21 @@ void AlertLogger::alert(
         return;
     }
 
-    alertLog << "[" << severity << "]["
-             << timestamp
-             << "] New remote endpoint: "
-             << endpoint << '\n';
-
-    alertLog << "              Process: "
-             << processSummary << "\n\n";
+    nlohmann::json alert = {
+        {"timestamp", timestamp},
+        {"severity", severity},
+        {"rule", "new_outbound_connection"},
+        {"endpoint", endpoint},
+        {"process", processSummary}
+    };
 
     if (abuseScore >= 0) {
-         alertLog << "              AbuseIPDB score: "
-                  << abuseScore << "%\n";
+        alert["abuseipdb_score"] = abuseScore;
     } else {
-        alertLog <<"              AbuseIPDB score: unavailable\n";
+        alert["abuseipdb_score"] = nullptr;
     }
 
-
+    alertLog << alert.dump() << '\n';
 
 }
 

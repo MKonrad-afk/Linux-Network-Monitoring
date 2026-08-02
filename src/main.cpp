@@ -27,7 +27,7 @@ std::set<std::string> loadTrustedEndpoints(
 
 int main() {
     NetworkMonitor monitor;
-    AlertLogger logger("alerts.log");
+    AlertLogger logger("alerts.jsonl");
     ThreatIntelClient threatIntel;
 
     if (threatIntel.isConfigured()) {
