@@ -17,6 +17,21 @@ using std::map;
 using std::ios;
 using std::ofstream;
 
+string normalizeEndpoint(const string& endpoint) {
+    const string prefix = "[::ffff:";
+
+    if (endpoint.rfind(prefix, 0) != 0) {
+        return endpoint;
+    }
+    const size_t closingBracket = endpoint.rfind(']');
+
+    if (closingBracket != string::npos) {
+        return endpoint;
+    }
+    return endpoint.substr(prefix.size(),
+        closingBracket - prefix.size())+ endpoint.substr( closingBracket+1);
+}
+
 bool isLoopbackEndpoint(const string& endpoint) {
     return endpoint.rfind("127.", 0) == 0 ||
             endpoint.rfind("::1", 0) == 0 ||
@@ -46,6 +61,7 @@ map<string,string> getRemoteEndpoints() {
         if ( line >> protocol >> state >> receiveQueue >> localAddress >> remoteAddress ) {
             string processInfo;
             std::getline(line,processInfo);
+            remoteAddress = normalizeEndpoint(remoteAddress);
             if (processInfo.empty()) {
                 processInfo = "unavailable (permission restricted or kernel socket";
             }
