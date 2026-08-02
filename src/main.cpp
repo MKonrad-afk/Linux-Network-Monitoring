@@ -26,13 +26,16 @@ string normalizeEndpoint(const string& endpoint) {
     if (endpoint.rfind(prefix, 0) != 0) {
         return endpoint;
     }
-    const size_t closingBracket = endpoint.rfind(']');
 
-    if (closingBracket != string::npos) {
+    const size_t closingBracket = endpoint.find("]:");
+
+    if (closingBracket == string::npos) {
         return endpoint;
     }
+
     return endpoint.substr(prefix.size(),
-        closingBracket - prefix.size())+ endpoint.substr( closingBracket+1);
+                           closingBracket - prefix.size())
+           + endpoint.substr(closingBracket + 1);
 }
 
 bool isLoopbackEndpoint(const string& endpoint) {
@@ -41,7 +44,7 @@ bool isLoopbackEndpoint(const string& endpoint) {
             endpoint.rfind("::ffff:127", 0) == 0;
 }
 map<string,string> getRemoteEndpoints() {
-    const char* command = "ss -H -tunp0 state established";
+    const char* command = "ss -H -tunpO state established";
     FILE* pipe = popen(command, "r");
 
     if (pipe == nullptr) {
@@ -61,7 +64,8 @@ map<string,string> getRemoteEndpoints() {
         string localAddress;
         string remoteAddress;
 
-        if ( line >> protocol >> state >> receiveQueue >> localAddress >> remoteAddress ) {
+    if (line >> protocol >> state >> receiveQueue >> sendQueue
+             >> localAddress >> remoteAddress) {            
             string processInfo;
             std::getline(line,processInfo);
             remoteAddress = normalizeEndpoint(remoteAddress);
@@ -125,17 +129,26 @@ int main(){
         std::this_thread::sleep_for(std::chrono::seconds(5));
         const map<string,string> current = getRemoteEndpoints();
 
-        for (const auto& [endpoint,processInfo]: current) {
-            if (trustedEndpoints.find(endpoint)== trustedEndpoints.end()) {
-                cout << "[INFO] Trusted endpoint seen: " << endpoint << "\n";
+     for (const auto& [endpoint, processInfo] : current) {
+            if (knownEndpoints.find(endpoint) != knownEndpoints.end()) {
+                continue;
             }
-            else{
+        
+            if (trustedEndpoints.find(endpoint) != trustedEndpoints.end()) {
+                cout << "[INFO] Trusted endpoint seen: "
+                     << endpoint << '\n';
+            } else {
                 const string timestamp = currentTimeStamp();
-                cout << "[ALERT]["<<timestamp<<"] New remote endpoint: " << endpoint << "\n";
-                cout << "              Process: " << processInfo << "\n";
-                saveAlert(timestamp , endpoint, processInfo);
-
+        
+                cout << "[ALERT][" << timestamp
+                     << "] New remote endpoint: " << endpoint << '\n';
+        
+                cout << "              Process: "
+                     << processInfo << '\n';
+        
+                saveAlert(timestamp, endpoint, processInfo);
             }
+        
             knownEndpoints[endpoint] = processInfo;
         }
 
