@@ -8,7 +8,8 @@ public:
 
     void alert(const std::string& endpoint,
                const std::string& processInfo,
-               const std::string& severity) const;
+               const std::string& severity,
+               int abuseScore) const;
 
     void trustedEndpoint(
         const std::string& endpoint) const;

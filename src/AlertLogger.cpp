@@ -69,7 +69,8 @@ std::string AlertLogger::formatProcessInfo(
 void AlertLogger::alert(
     const std::string& endpoint,
     const std::string& processInfo,
-    const std::string& severity) const {
+    const std::string& severity,
+    int abuseScore) const {
     const std::string timestamp = currentTimestamp();
     const std::string processSummary =
         formatProcessInfo(processInfo);
@@ -81,6 +82,15 @@ void AlertLogger::alert(
 
     std::cout << "              Process: "
               << processSummary << '\n';
+
+    if (abuseScore >= 0) {
+        std::cout << "              AbuseIPDB score: "<< abuseScore << "%\n";
+    } else {
+        std::cout<< "              AbuseIPDB score: unavailable\n";
+    }
+
+
+
 
     std::ofstream alertLog(logPath_, std::ios::app);
 
@@ -96,6 +106,16 @@ void AlertLogger::alert(
 
     alertLog << "              Process: "
              << processSummary << "\n\n";
+
+    if (abuseScore >= 0) {
+         alertLog << "              AbuseIPDB score: "
+                  << abuseScore << "%\n";
+    } else {
+        alertLog <<"              AbuseIPDB score: unavailable\n";
+    }
+
+
+
 }
 
 void AlertLogger::trustedEndpoint(

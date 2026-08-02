@@ -46,9 +46,14 @@ bool ThreatIntelClient::isConfigured() const {
 }
 
 int ThreatIntelClient::getAbuseConfidenceScore(
-    const std::string& ipAddress) const {
+    const std::string& ipAddress) {
     if (!isConfigured()) {
         return -1;
+    }
+    const auto cachedScore = scoreCache_.find(ipAddress);
+
+    if (cachedScore != scoreCache_.end()) {
+        return cachedScore->second;
     }
 
     CURL* curl = curl_easy_init();
@@ -120,9 +125,12 @@ int ThreatIntelClient::getAbuseConfidenceScore(
     try {
         const nlohmann::json report =
             nlohmann::json::parse(response);
-
-        return report.at("data").value(
+        const int score= report.at("data").value(
             "abuseConfidenceScore", -1);
+        if (score >= 0) {
+            scoreCache_[ipAddress] = score;
+        }
+        return score;
     } catch (const nlohmann::json::exception& error) {
         std::cerr << "Could not parse AbuseIPDB response: "
                   << error.what() << '\n';
