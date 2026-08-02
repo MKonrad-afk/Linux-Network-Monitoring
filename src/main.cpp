@@ -26,9 +26,11 @@ std::set<std::string> loadTrustedEndpoints(
     return endpoints;
 }
 
-int main() {
+int main(int argc, char* argv[]) {
     NetworkMonitor monitor;
     AuthLogMonitor authMonitor("/var/log/auth.log");
+
+    const bool demoBruteForce =  argc > 1  && std::string(argv[1]) == "--demo-bruteforce";
 
     if (authMonitor.isReady()) {
         std::cout << "Authentication log monitoring enabled.\n";
@@ -65,6 +67,43 @@ int main() {
     std::cout
         << "Checking every 5 seconds. Stop with Ctrl+C.\n";
 
+
+    if (demoBruteForce) {
+        std::cout << "Running safe SSH brute-force detection demo.\n";
+
+        const AuthEvent demoEvent{
+            AuthEventType::FailedSshLogin,
+            "demo-user",
+            "203.0.113.10",
+            ""
+        };
+
+        for (std::size_t i = 0;
+             i < AuthLogMonitor::bruteForceThreshold;
+             ++i) {
+
+            const std::size_t attempts =
+                authMonitor.recordFailedLogin(demoEvent);
+
+            std::cout << "[AUTH][MEDIUM] Failed SSH login for "
+                      << demoEvent.user
+                      << " from "
+                      << demoEvent.sourceIp
+                      << " (" << attempts
+                      << " recent attempt(s))\n";
+
+            if (attempts == AuthLogMonitor::bruteForceThreshold) {
+                std::cout
+                    << "[AUTH][HIGH] Possible SSH brute-force attack "
+                    << "from " << demoEvent.sourceIp
+                    << ": " << attempts
+                    << " failed logins within 5 minutes.\n";
+            }
+             }
+
+        return 0;
+    }
+
     while (true) {
         std::this_thread::sleep_for(
             std::chrono::seconds(5));
@@ -73,10 +112,44 @@ int main() {
             currentConnections =
                 monitor.getConnections();
 
-        for (const std::string& authLine : authMonitor.readNewLines()) {
-            std::cout <<"[AUTH]"<< authLine << '\n';
-        }
+        for (const AuthEvent& event : authMonitor.readNewEvents()) {
+            switch (event.type) {
+                case AuthEventType::SudoCommand:
+                    std::cout << "[AUTH][INFO] Sudo command by "
+                              << event.user
+                              << ": "
+                              << event.details
+                              << '\n';
+                    break;
+                case AuthEventType::FailedSshLogin: {
+                    const std::size_t attempts =
+                        authMonitor.recordFailedLogin(event);
 
+                    std::cout << "[AUTH][MEDIUM] Failed SSH login for "
+                              << event.user
+                              << " from "
+                              << event.sourceIp
+                              << " (" << attempts << " recent attempt(s))"
+                              << '\n';
+
+                    if (attempts == AuthLogMonitor::bruteForceThreshold) {
+                        std::cout << "[AUTH][HIGH] Possible SSH brute-force attack "
+                                  << "from " << event.sourceIp
+                                  << ": " << attempts
+                                  << " failed logins within 5 minutes.\n";
+                    }
+
+                    break;
+                }
+                case AuthEventType::SuccessfulSshLogin:
+                    std::cout << "[AUTH][INFO] Successful SSH login for "
+                              << event.user
+                              << " from "
+                              << event.sourceIp
+                              << '\n';
+                    break;
+            }
+        }
         for (const auto& [endpoint, processInfo]
              : currentConnections) {
             if (knownEndpoints.find(endpoint)
