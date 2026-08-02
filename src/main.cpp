@@ -5,12 +5,17 @@
 #include <chrono>
 #include <thread>
 #include <map>
+#include <fstream>
+#include <ctime>
+#include  <iomanip>
 
 using std::cout;
 using std::cerr;
 using std::vector;
 using std::string;
 using std::map;
+using std::ios;
+using std::ofstream;
 
 bool isLoopbackEndpoint(const string& endpoint) {
     return endpoint.rfind("127.", 0) == 0 ||
@@ -52,6 +57,27 @@ map<string,string> getRemoteEndpoints() {
     pclose(pipe);
     return endpoints;
 };
+string currentTimeStamp() {
+    const std::time_t now = std::time(nullptr);
+    const std::tm* localTime = std::localtime(&now);
+
+    if (localTime == nullptr) {
+        return "unknown-time-stamp";
+    }
+    std::ostringstream timestamp;
+    timestamp << std::put_time(localTime, "%Y-%m-%d %H:%M:%S");
+    return timestamp.str();
+}
+
+void saveAlert(const string& timestamp, const string& endpoint, const string& processInfo) {
+    ofstream alertLog("alerts.log",ios::app);
+    if (!alertLog) {
+        cerr << "Could not open alert log file.\n ";
+        return;
+    }
+    alertLog << "[ALERT]["<<timestamp<<"] New remote endpoint: " << endpoint << "\n";
+    alertLog << "              Process: " << processInfo << "\n";
+}
 int main(){
     cout << "SentinelLite started.\n";
     map<string,string>  knownEndpoints = getRemoteEndpoints();
@@ -66,9 +92,10 @@ int main(){
 
         for (const auto& [endpoint,processInfo]: current) {
             if (knownEndpoints.find(endpoint)== knownEndpoints.end()) {
-                cout << "[ALERT] New remote endpoint: " << endpoint << "\n";
+                const string timestamp = currentTimeStamp();
+                cout << "[ALERT]["<<timestamp<<"] New remote endpoint: " << endpoint << "\n";
                 cout << "              Process: " << processInfo << "\n";
-
+                saveAlert(timestamp , endpoint, processInfo);
                 knownEndpoints[endpoint] = processInfo;
             }
         }
