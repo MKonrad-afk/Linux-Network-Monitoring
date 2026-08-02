@@ -1,6 +1,7 @@
 #include "AlertLogger.h"
 #include "NetworkMonitor.h"
 #include "ThreatIntelClient.h"
+#include "AuthLogMonitor.h"
 
 #include <chrono>
 #include <fstream>
@@ -27,6 +28,14 @@ std::set<std::string> loadTrustedEndpoints(
 
 int main() {
     NetworkMonitor monitor;
+    AuthLogMonitor authMonitor("/var/log/auth.log");
+
+    if (authMonitor.isReady()) {
+        std::cout << "Authentication log monitoring enabled.\n";
+    } else {
+        std::cout << "Authentication log monitoring unavailable.\n";
+    }
+
     AlertLogger logger("alerts.jsonl");
     ThreatIntelClient threatIntel;
 
@@ -64,6 +73,10 @@ int main() {
             currentConnections =
                 monitor.getConnections();
 
+        for (const std::string& authLine : authMonitor.readNewLines()) {
+            std::cout <<"[AUTH]"<< authLine << '\n';
+        }
+
         for (const auto& [endpoint, processInfo]
              : currentConnections) {
             if (knownEndpoints.find(endpoint)
@@ -90,11 +103,7 @@ int main() {
                         processInfo,
                         severity,
                         abuseScore);
-
-
-
                 }
-
             knownEndpoints[endpoint] = processInfo;
              }
     }

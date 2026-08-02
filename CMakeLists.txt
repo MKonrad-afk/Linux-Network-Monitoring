@@ -9,7 +9,9 @@ add_executable(Linux-Network-Monitoring src/main.cpp
         src/AlertLogger.cpp
         src/AlertLogger.h
         src/ThreatIntelClient.cpp
-        src/ThreatIntelClient.h)
+        src/ThreatIntelClient.h
+        src/AuthLogMonitor.cpp
+        src/AuthLogMonitor.h)
 
 find_package(CURL    REQUIRED)
 find_package(nlohmann_json REQUIRED)
