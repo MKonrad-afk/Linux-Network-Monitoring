@@ -82,23 +82,23 @@ int main(int argc, char* argv[]) {
              i < AuthLogMonitor::bruteForceThreshold;
              ++i) {
 
-            const std::size_t attempts =
-                authMonitor.recordFailedLogin(demoEvent);
+                const std::size_t attempts =
+                    authMonitor.recordFailedLogin(demoEvent);
 
-            std::cout << "[AUTH][MEDIUM] Failed SSH login for "
-                      << demoEvent.user
-                      << " from "
-                      << demoEvent.sourceIp
-                      << " (" << attempts
-                      << " recent attempt(s))\n";
+                std::cout << "[AUTH][MEDIUM] Failed SSH login for "
+                          << demoEvent.user
+                          << " from "
+                          << demoEvent.sourceIp
+                          << " (" << attempts
+                          << " recent attempt(s))\n";
 
-            if (attempts == AuthLogMonitor::bruteForceThreshold) {
-                std::cout
-                    << "[AUTH][HIGH] Possible SSH brute-force attack "
-                    << "from " << demoEvent.sourceIp
-                    << ": " << attempts
-                    << " failed logins within 5 minutes.\n";
-            }
+                if (attempts == AuthLogMonitor::bruteForceThreshold) {
+                    logger.authAlert(
+                        demoEvent.sourceIp,
+                        demoEvent.user,
+                        attempts,
+                        "HIGH");
+                }
              }
 
         return 0;
@@ -133,10 +133,7 @@ int main(int argc, char* argv[]) {
                               << '\n';
 
                     if (attempts == AuthLogMonitor::bruteForceThreshold) {
-                        std::cout << "[AUTH][HIGH] Possible SSH brute-force attack "
-                                  << "from " << event.sourceIp
-                                  << ": " << attempts
-                                  << " failed logins within 5 minutes.\n";
+                        logger.authAlert(event.sourceIp, event.user,attempts,"HIGH");
                     }
 
                     break;

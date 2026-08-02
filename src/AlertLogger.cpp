@@ -117,6 +117,45 @@ void AlertLogger::alert(
     alertLog << alert.dump() << '\n';
 
 }
+void AlertLogger::authAlert(
+    const std::string& sourceIp,
+    const std::string& user,
+    std::size_t failedAttempts,
+    const std::string& severity) const {
+
+    const std::string timestamp = currentTimestamp();
+
+    std::cout << "[" << severity << "][" << timestamp
+              << "] Possible SSH brute-force attack from "
+              << sourceIp << '\n';
+
+    std::cout << "              User: " << user << '\n';
+
+    std::cout << "              Failed attempts: "
+              << failedAttempts
+              << " within 5 minutes.\n";
+
+    std::ofstream alertLog(logPath_, std::ios::app);
+
+    if (!alertLog) {
+        std::cerr << "Could not open alert log.\n";
+        return;
+    }
+
+    nlohmann::json alert = {
+        {"timestamp", timestamp},
+        {"severity", severity},
+        {"rule", "ssh_brute_force"},
+        {"source_ip", sourceIp},
+        {"user", user},
+        {"failed_attempts", failedAttempts},
+        {"window_seconds", 300}
+    };
+
+    alertLog << alert.dump() << '\n';
+}
+
+
 
 void AlertLogger::trustedEndpoint(
     const std::string& endpoint) const {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <cstddef>
 
 class AlertLogger {
 public:
@@ -10,6 +11,10 @@ public:
                const std::string& processInfo,
                const std::string& severity,
                int abuseScore) const;
+    void authAlert(const std::string& sourceIp,
+        const std::string& user,
+        std::size_t failedAttempts,
+        const std::string& severity)const;
 
     void trustedEndpoint(
         const std::string& endpoint) const;
